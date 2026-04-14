@@ -6,8 +6,6 @@ package frc.lib.Ylib.subsystems.swerve.Modules;
 
 import org.littletonrobotics.junction.AutoLog;
 
-import com.pathplanner.lib.config.ModuleConfig;
-
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.SwerveModuleState;

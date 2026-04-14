@@ -67,7 +67,7 @@ public class ModuleIOSim implements ModuleIO{
         }
         DriveSim.update(0.02);
         if (postionClosedLoop) {
-            SteerSim.setInputVoltage(positionController.calculate(SteerSim.getAngularPositionRotations()));
+            SteerSim.setInputVoltage(positionController.calculate(SteerSim.getAngularPositionRotations(),PostionTarget.getRotations()));
         }
         SteerSim.update(0.02);
     }

@@ -5,7 +5,6 @@
 package frc.lib.Ylib.subsystems.swerve;
 
 import static edu.wpi.first.units.Units.Kilogram;
-import static edu.wpi.first.units.Units.KilogramSquareMeters;
 import static edu.wpi.first.units.Units.Second;
 import static edu.wpi.first.units.Units.Volts;
 
@@ -14,21 +13,13 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import org.littletonrobotics.junction.Logger;
 
-import com.ctre.phoenix6.swerve.jni.SwerveJNI.ModuleState;
-import com.pathplanner.lib.auto.AutoBuilder;
-import com.pathplanner.lib.commands.PathPlannerAuto;
 import com.pathplanner.lib.config.ModuleConfig;
-import com.pathplanner.lib.config.PIDConstants;
 import com.pathplanner.lib.config.RobotConfig;
-import com.pathplanner.lib.controllers.PPHolonomicDriveController;
 import com.pathplanner.lib.util.DriveFeedforwards;
-import com.pathplanner.lib.util.PathPlannerLogging;
 import com.pathplanner.lib.util.swerve.SwerveSetpoint;
 import com.pathplanner.lib.util.swerve.SwerveSetpointGenerator;
 
-import edu.wpi.first.hal.HAL;
-import edu.wpi.first.hal.FRCNetComm.tInstances;
-import edu.wpi.first.hal.FRCNetComm.tResourceType;
+import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.estimator.SwerveDrivePoseEstimator;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
@@ -40,15 +31,15 @@ import edu.wpi.first.math.kinematics.SwerveModuleState;
 import edu.wpi.first.math.system.plant.DCMotor;
 import edu.wpi.first.units.measure.Mass;
 import edu.wpi.first.units.measure.MomentOfInertia;
-import edu.wpi.first.wpilibj.DriverStation;
-import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import edu.wpi.first.wpilibj2.command.Command;
-import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine;
 import frc.lib.Ylib.subsystems.swerve.Gyro.GyroIO;
 import frc.lib.Ylib.subsystems.swerve.Modules.ModuleIO;
+import frc.lib.Ylib.subsystems.swerve.Modules.ModuleInputsAutoLogged;
 import frc.lib.Ylib.util.PhoenixOdometryThread;
+import frc.robot.lib.BLine.FollowPath;
+import frc.robot.lib.BLine.Path;
 /**
  * Subsystem class for a Swerve Drive powertrain.
  * Uses AdvantageKit for IO abstraction and PathPlanner for kinematic setpoint generation.
@@ -69,12 +60,13 @@ public class swerveDrive extends SubsystemBase {
   private final SysIdRoutine sysidDrive;
   private final SysIdRoutine sysidSteer;
   public static final Lock odometryLock = new ReentrantLock();
+  private FollowPath.Builder pathBuilder;
 
 
   private static swerveDrive instance;
   /** * Creates a new swerveDrive subsystem.
    * @param robotMass The total mass of the robot (including battery and bumpers).
-   * @param moi The Moment of Inertia of the robot.
+   * @param MOI The Moment of Inertia of the robot.
    * @param DriveMotor The drive motor that you use for your swerve
    * @param flModuleIO Front Left module IO layer.
    * @param frModuleIO Front Right module IO layer.
@@ -128,10 +120,46 @@ public class swerveDrive extends SubsystemBase {
         kinematics.toSwerveModuleStates(new ChassisSpeeds()), 
         DriveFeedforwards.zeros(modules.length)
     );
-    AutoBuilder.configure(this::getPose, this::setPose, this::getChassisSpeedsRobotrelitive, this::runVelocity, 
-      new PPHolonomicDriveController(new PIDConstants(0, 0, 0), new PIDConstants(0,0,0)), PP_Config, ()->DriverStation.getAlliance().isEmpty() ? false : DriverStation.getAlliance().get() == Alliance.Blue, this);
-      PathPlannerLogging.setLogTargetPoseCallback((pose)-> Logger.recordOutput("Swerve/AutoPath/TargetPose", pose));
-      PathPlannerLogging.setLogActivePathCallback((Path)-> Logger.recordOutput("Swerve/AutoPath/Path", Path.toArray(Pose2d[]::new)));
+    // AutoBuilder.configure(this::getPose, this::setPose, this::getChassisSpeedsRobotrelitive, this::runVelocity, 
+    //   new PPHolonomicDriveController(new PIDConstants(0, 0, 0), new PIDConstants(0,0,0)), PP_Config, ()->DriverStation.getAlliance().isEmpty() ? false : DriverStation.getAlliance().get() == Alliance.Blue, this);
+    //   PathPlannerLogging.setLogTargetPoseCallback((pose)-> Logger.recordOutput("Swerve/AutoPath/TargetPose", pose));
+    //   PathPlannerLogging.setLogActivePathCallback((Path)-> Logger.recordOutput("Swerve/AutoPath/Path", Path.toArray(Pose2d[]::new)));
+    // 2. Max Linear Acceleration (F = ma -> a = F/m)
+    double totalStallTorque = DriveMotor.stallTorqueNewtonMeters * flModuleIO.getConfig().getDriveMotorGearRatio();
+    double maxForce = totalStallTorque / flModuleIO.getConfig().getWheelRadiusMeter();
+    double maxAccelerationMetersPerSec2 = maxForce / robotMass.in(Kilogram);
+
+    // 3. Max Rotational Velocity (Omega = v / r)
+    // The "drive radius" is the distance from the center of the robot to the furthest module
+    double driveRadius = Math.hypot(flModuleIO.getTranslation2d().getX(), flModuleIO.getTranslation2d().getY());
+    double maxVelocityRadPerSec = MaxSpeedMeterPerSec / driveRadius;
+    double maxVelocityDegPerSec = Math.toDegrees(maxVelocityRadPerSec);
+
+    // 4. Max Rotational Acceleration (Alpha = Torque_rotational / MomentOfInertia)
+    // Simple approximation of Moment of Inertia (J) for a square robot
+    double momentOfInertia = (1.0/12.0) * robotMass.in(Kilogram) * (Math.pow(flModuleIO.getTranslation2d().getX(), 2) + Math.pow(flModuleIO.getTranslation2d().getY(), 2));
+    double maxRotationalAccelerationRadPerSec2 = (maxForce * driveRadius) / momentOfInertia;
+    double maxAccelerationDegPerSec2 = Math.toDegrees(maxRotationalAccelerationRadPerSec2);
+
+    // --- Implementation ---
+
+    Path.setDefaultGlobalConstraints(
+      new Path.DefaultGlobalConstraints(
+        MaxSpeedMeterPerSec, 
+        maxAccelerationMetersPerSec2, 
+        maxVelocityDegPerSec, 
+        maxAccelerationDegPerSec2, 
+        0.05, // endTranslationToleranceMeters (5cm)
+        2.0,  // endRotationToleranceDeg (2 degrees)
+        0.1   // intermediateHandoffRadiusMeters
+    )
+  );
+  pathBuilder = new FollowPath.Builder(this, this::getPose, this::getChassisSpeedsRobotrelitive, this::runVelocity, 
+    new PIDController(momentOfInertia, maxRotationalAccelerationRadPerSec2, maxAccelerationDegPerSec2), 
+    new PIDController(momentOfInertia, maxRotationalAccelerationRadPerSec2, maxAccelerationDegPerSec2), 
+    new PIDController(momentOfInertia, maxRotationalAccelerationRadPerSec2, maxAccelerationDegPerSec2))
+    .withDefaultShouldFlip()
+    .withPoseReset(this::setPose);
   }
   @Override
   public void periodic() {
@@ -139,8 +167,6 @@ public class swerveDrive extends SubsystemBase {
       Logger.recordOutput("Swerve/Command", getCurrentCommand().getName());
     }
     odometryLock.lock();
-
-    
   }
   /** 
    * use this to run the ChasisSpeeds that you want to use
