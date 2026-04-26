@@ -4,7 +4,6 @@
 
 package frc.lib.Ylib.subsystems.swerve.Gyro;
 
-import java.util.Queue;
 import static edu.wpi.first.units.Units.Radian;
 import static edu.wpi.first.units.Units.RadiansPerSecond;
 
@@ -14,12 +13,12 @@ import com.ctre.phoenix6.StatusCode;
 import com.ctre.phoenix6.StatusSignal;
 import com.ctre.phoenix6.configs.Pigeon2Configuration;
 import com.ctre.phoenix6.hardware.Pigeon2;
-
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.units.measure.Angle;
 import edu.wpi.first.units.measure.AngularVelocity;
 import frc.lib.Ylib.util.PhoenixOdometryThread;
+import java.util.Queue;
 
 /** Add your docs here. */
 public class GyroIOPigeon2 implements GyroIO {
@@ -33,7 +32,7 @@ public class GyroIOPigeon2 implements GyroIO {
   private final StatusSignal<AngularVelocity> pitchVelocity;
   private final StatusSignal<AngularVelocity> rollVelocity;
 
-  public GyroIOPigeon2(int id,String canbus,Pigeon2Configuration config) {
+  public GyroIOPigeon2(int id, String canbus, Pigeon2Configuration config) {
     pigeon = new Pigeon2(id, new CANBus(canbus));
     pigeon.getConfigurator().setYaw(0.0);
     yaw = pigeon.getYaw();
@@ -52,9 +51,16 @@ public class GyroIOPigeon2 implements GyroIO {
 
   @Override
   public void UpdateInputs(GyroIOInputs inputs) {
-    inputs.connected = BaseStatusSignal.refreshAll(yaw, roll,pitch,yawVelocity).equals(StatusCode.OK);
-    inputs.yawPitchRollPosition = new Rotation3d(roll.getValue().in(Radian),pitch.getValue().in(Radian),yaw.getValue().in(Radian));
-    inputs.yawPitchRollVelocityRadPerSec = new Rotation3d(rollVelocity.getValue().in(RadiansPerSecond), pitchVelocity.getValue().in(RadiansPerSecond), yawVelocity.getValue().in(RadiansPerSecond));
+    inputs.connected =
+        BaseStatusSignal.refreshAll(yaw, roll, pitch, yawVelocity).equals(StatusCode.OK);
+    inputs.yawPitchRollPosition =
+        new Rotation3d(
+            roll.getValue().in(Radian), pitch.getValue().in(Radian), yaw.getValue().in(Radian));
+    inputs.yawPitchRollVelocityRadPerSec =
+        new Rotation3d(
+            rollVelocity.getValue().in(RadiansPerSecond),
+            pitchVelocity.getValue().in(RadiansPerSecond),
+            yawVelocity.getValue().in(RadiansPerSecond));
     inputs.odometryYawTimestamps =
         yawTimestampQueue.stream().mapToDouble((Double value) -> value).toArray();
     inputs.odometryYawPositions =
@@ -65,4 +71,3 @@ public class GyroIOPigeon2 implements GyroIO {
     yawPositionQueue.clear();
   }
 }
-

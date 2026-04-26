@@ -4,21 +4,22 @@
 
 package frc.lib.Ylib.subsystems.swerve.Gyro;
 
-import org.littletonrobotics.junction.AutoLog;
-import frc.lib.Ylib.subsystems.swerve.swerveDrive;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Rotation3d;
+import frc.lib.Ylib.subsystems.swerve.swerveDrive;
+import org.littletonrobotics.junction.AutoLog;
 
 /** Add your docs here. */
 public interface GyroIO {
-    /** how you update the inputs shold be calld evry {@link swerveDrive#periodic()} */
-    public void UpdateInputs(GyroIOInputs inputs);
-    @AutoLog
-    public static class GyroIOInputs {
-        public boolean connected = false;
-        public Rotation3d yawPitchRollVelocityRadPerSec = new Rotation3d();
-        public double[] odometryYawTimestamps = new double[] {};
-        public Rotation2d[] odometryYawPositions = new Rotation2d[] {};
-        public Rotation3d yawPitchRollPosition = new Rotation3d();
-    }
+  /** how you update the inputs shold be calld evry {@link swerveDrive#periodic()} */
+  public void UpdateInputs(GyroIOInputs inputs);
+
+  @AutoLog
+  public static class GyroIOInputs {
+    public boolean connected = false;
+    public Rotation3d yawPitchRollVelocityRadPerSec = new Rotation3d();
+    public double[] odometryYawTimestamps = new double[] {};
+    public Rotation2d[] odometryYawPositions = new Rotation2d[] {};
+    public Rotation3d yawPitchRollPosition = new Rotation3d();
+  }
 }
